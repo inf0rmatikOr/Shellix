@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+.xterm-viewport::-webkit-scrollbar {
+  display: none;            /* Chrome, Safari */
+}
+.xterm-viewport {
+  -ms-overflow-style: none; /* IE & Edge */
+  scrollbar-width: none;    /* Firefox */
+}
