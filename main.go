@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os/user"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
@@ -33,7 +34,7 @@ func sshHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	// Erste Nachricht = Verbindungsdaten
+	// Verbindungsdaten
 	_, msg, err := ws.ReadMessage()
 	if err != nil {
 		log.Println("Failed to read credentials:", err)
@@ -46,7 +47,7 @@ func sshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SSH Config mit Daten vom Frontend
+	// SSH Config
 	config := &ssh.ClientConfig{
 		User: creds.User,
 		Auth: []ssh.AuthMethod{
@@ -120,14 +121,56 @@ func sshHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getUsername() string {
+	usr, _ := user.Current()
+	return usr.Username
+}
+
+func handleGetUsername(w http.ResponseWriter, r *http.Request) {
+	username := getUsername()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"username": username})
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Standard-CORS-Header
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Preflight-Requests sofort beantworten
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 //go:embed ui/dist/*
 var staticFiles embed.FS
 
 func main() {
-	http.HandleFunc("/ssh", sshHandler)
-	subFS, _ := fs.Sub(staticFiles, "ui/dist")
-	http.Handle("/", http.FileServer(http.FS(subFS)))
+	port := "8080"
 
-	fmt.Println("Server läuft auf :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// Subdirectory "ui/dist" aus dem eingebetteten Dateisystem extrahieren
+	subFS, err := fs.Sub(staticFiles, "ui/dist")
+	if err != nil {
+		log.Fatalf("Static files not found: %v", err)
+	}
+
+	// HTTP Routes
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ssh", sshHandler)
+	mux.HandleFunc("/api/username", handleGetUsername)
+	mux.Handle("/", http.FileServer(http.FS(subFS)))
+
+	// Middleware einhängen
+	handler := corsMiddleware(mux)
+
+	// Server starten
+	fmt.Println("Server läuft auf :" + port)
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }

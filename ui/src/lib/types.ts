@@ -11,3 +11,8 @@ export type Server = {
 export type SshConnection = {
     id: number;
 }
+
+export type User = {
+    username: string;
+    password: string;
+}
